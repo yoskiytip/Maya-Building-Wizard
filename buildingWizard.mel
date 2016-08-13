@@ -1,0 +1,777 @@
+/* Building wizard */
+/* created by RJ. 2016 */
+
+/* Edge length calculator */
+
+global proc float edgeLength(float $ptX1, float $ptZ1, float $ptX2, float $ptZ2) {
+
+    float $edgeLength = 0;
+    
+    $edgeLength = sqrt(($ptX2 - $ptX1)*($ptX2 - $ptX1) + ($ptZ2 - $ptZ1)*($ptZ2 - $ptZ1));
+    
+    return $edgeLength;
+    
+}
+
+
+// ************************************************************************************************ //
+
+/* Instance at selected Locators tool */
+
+proc instAtLocators(string $locators[], string $obj, string $lvl) {
+    int $j = 0;
+    // Instancing object
+    for ($j = 0; $j < size($locators); $j++) {
+        string $name = ($lvl + "_" + $obj + "_0" + $j);
+        instance -n $name $obj;
+        string $PtCnst = "tempConstr";
+        parentConstraint -n $PtCnst $locators[$j] $name;
+        delete $PtCnst;       
+    }
+}
+
+
+// ************************************************************************************************ //
+
+/* Random 90 degrees angle generation */
+
+global proc float rand90Rotation(){
+    float $rotValue = rand(0,360);
+    if ($rotValue <= 90 && $rotValue > 0) {
+        $rotValue = 90;
+    } else if ($rotValue <= 180 && $rotValue > 90) {
+        $rotValue = 180;
+    } else if ($rotValue <= 270 && $rotValue > 180) {
+        $rotValue = 270;
+    } else {
+        $rotValue = 0;
+    }
+    return $rotValue;
+}
+
+// ************************************************************************************************ //
+
+/* Walls generator */
+
+proc wallsGen(string $curveShape, float $locFloorHeight, string $lvl){
+    // Quering a number of points inside curve shape
+    int $nVerts = `getAttr ($curveShape + ".spans")`;
+    
+    int $i = 0;
+    string $vtxList[];
+    
+    // Storing all the points under an array variable
+    for ($i = 0; $i<$nVerts; $i++){
+        $vtxList[$i] = ($curveShape + ".cv[" + $i + "]");
+    }
+    
+    // Storing an 'X' coordinates of all the points under an array
+    float $xCoords[];
+    for ($i=0; $i < $nVerts; $i++){
+        float $vtxCoord[] = `pointPosition $vtxList[$i]`;
+        $xCoords[$i] = $vtxCoord[0];
+    }
+    
+    // Storing an 'Z' coordinates of all the points under an array
+    float $zCoords[];
+    for ($i=0; $i < $nVerts; $i++){
+        float $vtxCoord[] = `pointPosition $vtxList[$i]`;
+        $zCoords[$i] = $vtxCoord[2];
+    }
+    
+    // Creating commands for generating the walls
+    string $wallPoly[];
+    for ($i=0; $i<$nVerts; $i++){
+        if ($i < ($nVerts - 1)){
+            $wallPoly[$i] = ("polyCreateFacet -tx 1 -p " + $xCoords[$i] + " " + 0 + " " + $zCoords[$i] + " -p " + $xCoords[$i+1] + " " + 0 + " " + $zCoords[$i+1] + " -p " + $xCoords[$i+1] + " " + $locFloorHeight + " " + $zCoords[$i+1] + " -p " + $xCoords[$i] + " " + $locFloorHeight + " " + $zCoords[$i] + " -n " + $lvl + "_wall_0" + $i + ";");
+        } else {
+            $wallPoly[$i] = ("polyCreateFacet -tx 1 -p " + $xCoords[$i] + " " + 0 + " " + $zCoords[$i] + " -p " + $xCoords[0] + " " + 0 + " " + $zCoords[0] + " -p " + $xCoords[0] + " " + $locFloorHeight + " " + $zCoords[0] + " -p " + $xCoords[$i] + " " + $locFloorHeight + " " + $zCoords[$i] + " -n " + $lvl + "_wall_0" + $i + ";");
+        }
+        
+    }
+
+    // Generating
+    string $walls[];
+    for ($i=0; $i<$nVerts; $i++){
+        eval ($wallPoly[$i]);
+        $walls[$i] = ($lvl + "_wall_" + "0" + $i);
+    }
+    
+    // Combining the walls under one mesh
+    select -cl;
+    for ($wall in $walls){
+        select -add $wall;
+    }
+    polyUnite -ch 0 -mergeUVSets 1 -centerPivot -n ($lvl + "_wall_" + "01");
+}
+
+
+// ************************************************************************************************ //
+
+/* Windows placement */
+
+proc windowPlacement(string $shapeCurve, float $groundFloorHeight, float $floorHeight, float $horPad, float $vertPad, float $winWidth, float $winHeight, float $winDepth, string $lvl){
+    
+    int $i = 0;
+    int $nVerts = `getAttr ($shapeCurve + ".spans")`;
+    // Calculating the perimeter length
+    float $perimeter = `arclen $shapeCurve`;
+    // Length for each wall
+    float $wallsLength[];
+    
+    for ($i=0; $i<$nVerts; $i++){
+        float $cvPos_A[] = `pointPosition ($shapeCurve + ".cv[" + $i + "]")`;
+        float $cvPos_B[] = `pointPosition ($shapeCurve + ".cv[" + ($i + 1) + "]")`;
+        $wallsLength[$i] = edgeLength($cvPos_A[0], $cvPos_A[2], $cvPos_B[0], $cvPos_B[2]);
+    }
+    
+    // Calculating how much windows can be placed onto each wall
+    float $windowsSpace[];
+    int $windowsNum[];
+    
+    for ($i=0; $i<$nVerts; $i++){
+        $windowsSpace[$i] = $wallsLength[$i] - ($horPad*2);
+        $windowsNum[$i] = ($windowsSpace[$i]/$winWidth);
+    }
+    
+    // Finding out a position on the curve of each possible window
+    for ($i=0; $i<$nVerts; $i++){
+        int $k=0;
+        float $distUpToThePoint = 0;
+        for ($k=0; $k<($i); $k++){
+            $distUpToThePoint += $wallsLength[$k];
+        }
+        print ("wall " + $i + " summary length is:\n" + $distUpToThePoint + "\n"); 
+        float $step = 1/$perimeter;
+        for ($k=0; $k<$windowsNum[$i]; $k++){
+            float $winLocation = ($distUpToThePoint + $horPad + ($k*$winWidth) + ($winWidth/2) + ($wallsLength[$i] - $horPad*2 - $winWidth*$windowsNum[$i])/2)*$step;
+            string $loc[] = `spaceLocator -n "loc_window1"`;
+            string $moPath = `pathAnimation -fractionMode true -follow true -followAxis x -upAxis y -worldUpType "vector" -worldUpVector 0 1 0 -inverseUp false -inverseFront true -bank false -startTimeU 1 -endTimeU 2 $loc[0] $shapeCurve`;
+            CBdeleteConnection ($moPath + ".u");
+            setAttr ($moPath + ".u") $winLocation;
+            
+            CBdeleteConnection ($loc[0] + ".tx");
+            CBdeleteConnection ($loc[0] + ".ty");
+            CBdeleteConnection ($loc[0] + ".tz");
+            CBdeleteConnection ($loc[0] + ".rx");
+            CBdeleteConnection ($loc[0] + ".ry");
+            CBdeleteConnection ($loc[0] + ".rz");
+            
+            move -r 0 $vertPad 0 $loc[0];
+        }
+    }
+}
+
+
+// ************************************************************************************************ //
+/* Clonning Window BBoxes onto windows' positions */
+proc bboxPlacement(string $window, string $BBox, string $lvl){
+    if ($BBox != "_"){
+        string $windows[] = `ls -tr ($lvl + "_" + $window + "*")`;
+        int $i=0;
+            for ($i=0; $i<(size($windows)); $i++){
+                string $tempSel[] = `duplicate -n ($lvl + "_" + $BBox) $BBox`;
+                parentConstraint $windows[$i] $tempSel[0];
+            }
+    } else {
+        print "Window's form is standard";
+    }
+}
+
+// ************************************************************************************************ //
+
+/* Windows Cut Out*/
+
+proc windowsCutOut(string $wallPrefix, string $windowPrefix, float $depth, string $winBBoxPrefix, string $lvl){
+    
+    // Storing the wall under a variable
+    string $wall[] = `ls -tr ($wallPrefix + "*")`;
+    string $wallCopy[] = `duplicate -n ($wall[0] + "_copy") $wall[0]`;
+    select -r ($windowPrefix + "*");
+    string $windowsSel[] = `ls -sl -tr`; select -cl;
+    string $winBBox[];
+    // Removing constraints from BBoxes
+    string $ptCnst[] = `ls "*parentConstraint*"`;
+    if (`objExists $ptCnst[0]`){delete "*parentConstraint*";}
+    // Creating BBoxes
+    if ($winBBoxPrefix != "_"){
+        $winBBox = `ls -tr ($lvl + "_" + $winBBoxPrefix + "*")`;
+        print $winBBox;
+        for ($box in $winBBox){
+            move -r -os 0 0 $depth $box;
+            scale -r -1 1 $depth $box;
+        }
+    } else {
+        // Select all level windows
+        for ($win in $windowsSel){
+            duplicate -n ($win + "_copy") $win;
+            geomToBBox -nameSuffix _BBox -shaderColor 0.5 0.5 0.5 ($win + "_copy");
+            move -r -os 0 0 $depth;
+            scale -r -1 1 $depth;
+            
+            select -r $win; move -r -os 0 0 ($depth -1); select -cl;
+        }
+    }
+    // Generating a 'combination' command
+    if ($winBBoxPrefix != "_"){
+        int $i=0;
+        string $combineCmd = "polyUnite -ch 0 -mergeUVSets 1 -name tempGeo";
+        for ($i=0; $i<(size($winBBox)); $i++){
+            $combineCmd = $combineCmd + (" " + $winBBox[$i]);
+        }
+        print "\n"; print $winBBox;
+        $combineCmd = ($combineCmd + ";");
+        print ("\n" + $combineCmd);
+        eval($combineCmd); //delete -ch "tempGeo";
+        print ("\n" + $wall[0]);
+        polyCBoolOp -op 2 -ch 0 -preserveColor 0 -classification 1 -name ($wall[0] + "_cutOut") $wallCopy[0] "tempGeo";
+        hide $wall[0];
+    } else {
+        int $i=0;
+        string $combineCmd = "polyUnite -ch 0 -mergeUVSets 1 -name tempGeo";
+        for ($i=0; $i<(size($windowsSel)); $i++){
+            $combineCmd = $combineCmd + (" " + $windowsSel[$i] + "_copy_BBox");
+        }
+        $combineCmd = ($combineCmd + ";");
+        print ("\n" + $combineCmd);
+        eval($combineCmd);
+        print ("\n" + $wall[0]);
+        polyCBoolOp -op 2 -ch 0 -preserveColor 0 -classification 1 -name ($wall[0] + "_cutOut") $wallCopy[0] "tempGeo";
+        hide $wall[0];        
+    }
+    select -r ($windowPrefix + "*"); move -r -os 0 0 $depth; select -cl;
+}
+
+
+// ************************************************************************************************ //
+
+/* Corner column instancing */
+
+proc cornerColumnsInst(string $curveShape, string $cornerColumn, string $lvl){
+    // Quering a number of points inside curve shape
+    int $nVerts = `getAttr ($curveShape + ".spans")`;
+    
+    int $i = 0;
+    string $vtxList[];
+    
+    // Storing all the points under an array variable
+    for ($i = 0; $i<$nVerts; $i++){
+        $vtxList[$i] = ($curveShape + ".cv[" + $i + "]");
+    }
+    
+    // Storing an 'X' coordinates of all the points under an array
+    float $xCoords[];
+    for ($i=0; $i < $nVerts; $i++){
+        float $vtxCoord[] = `pointPosition $vtxList[$i]`;
+        $xCoords[$i] = $vtxCoord[0];
+    }
+    
+    // Storing an 'Z' coordinates of all the points under an array
+    float $zCoords[];
+    for ($i=0; $i < $nVerts; $i++){
+        float $vtxCoord[] = `pointPosition $vtxList[$i]`;
+        $zCoords[$i] = $vtxCoord[2];
+    }
+
+    // Generating
+    for ($i=0; $i<$nVerts; $i++){
+        string $tempsSel[] = `instance -n ($lvl + "_cornerColumn_0" + $i) $cornerColumn`;
+        move -ws $xCoords[$i] 0 $zCoords[$i] $tempsSel[0];
+    }
+}    
+
+
+// ************************************************************************************************ //
+
+/* Reinforcement Placement */
+
+proc reinforcementPlacement(string $shapeCurve, string $reinforcementObj, float $columnsInterval, string $lvl){
+    
+    int $i = 0;
+    // Calculating the perimeter length
+    float $perimeter = `arclen $shapeCurve`;
+    int $colNum = $perimeter/$columnsInterval;
+    float $colNumFloat = $perimeter/$columnsInterval;
+
+    // Finding out a position on the curve of each possible window
+    for ($i=1; $i<$colNum; $i++){
+        float $colPosition = ((1/$colNumFloat)*$i);
+        string $tempSel[] = `instance -n ($lvl + "_reinforcement_0" + $i) $reinforcementObj`;
+        string $moPath = `pathAnimation -fractionMode true -follow true -followAxis x -upAxis y -worldUpType "vector" -worldUpVector 0 1 0 -inverseUp false -inverseFront true -bank false -startTimeU 1 -endTimeU 2 $tempSel[0] $shapeCurve`;
+        CBdeleteConnection ($moPath + ".u");
+        setAttr ($moPath + ".u") $colPosition;
+        
+        CBdeleteConnection ($tempSel[0] + ".tx");
+        CBdeleteConnection ($tempSel[0] + ".ty");
+        CBdeleteConnection ($tempSel[0] + ".tz");
+        CBdeleteConnection ($tempSel[0] + ".rx");
+        CBdeleteConnection ($tempSel[0] + ".ry");
+        CBdeleteConnection ($tempSel[0] + ".rz");
+
+        delete $moPath;
+    }  
+}
+
+
+// ************************************************************************************************ //
+
+/* Eaves Generation */
+
+proc extrudeEaves(string $perimeterShape, string $eavesProfile, string $lvl) {
+          
+    string $profile[] = `instance $eavesProfile`; 
+    string $curve[] = `duplicate $perimeterShape`;
+    closeCurve -ch 0 -ps 1 -rpo 1 -bb 0.5 -bki 0 -p 0.1 $curve[0];
+    
+    string $movePath = `pathAnimation -follow true -followAxis y -upAxis z -worldUpType "vector" -worldUpVector 0 1 0 -c $curve[0] $profile[0]`;
+    string $extrude[] = `extrude -ch true -rn false -po 0 -et 2 -ucp 1 -fpt 1 -upn 1 -rotation 0 -scale 1 -rsp 1 $profile[0] $curve[0]`;
+    
+    string $polyEaves[] = `nurbsToPoly -mnd 1 -ch 0 -f 3 -pt 0 -pc 200 -chr 0.9 -ft 0.01 -mel 0.001 -d 0.1 -ut 1 -un 3 -vt 1 -vn 3 -uch 0 -ucr 0 -cht 0.2 -es 0 -ntr 0 -mrt 0 -uss 1 -name ($lvl + "_eaves00") $extrude[0]`;
+    polySoftEdge -a 0 -ch 0 $polyEaves[0];
+    
+    delete $movePath $curve[0] $profile[0] $extrude[0];
+}
+
+
+// ************************************************************************************************ //
+
+/* Floor instancing */
+
+proc instanceLevel(string $levelName, float $lvlHeight, int $lvlNum){
+    int $i = 0;
+    for ($i=1; $i < $lvlNum; $i++){
+        string $newGrp = `group -em -n ("grp_" + $levelName)`;
+        select -r ("grp_" + $levelName + " | " + $levelName + "*");
+        string $lvlParts[] = `ls -sl -tr`;
+        for ($part in $lvlParts){
+            string $instPart[] = `instance $part`;
+            parent $instPart[0] $newGrp;
+        }
+        select -cl;
+        move -ws 0 ($lvlHeight * $i) 0 $newGrp;
+    }
+}
+
+
+// ************************************************************************************************ //
+
+/* Create Roof */
+
+proc roofGen(string $perimeter, float $levelHeight, int $levelsNum, string $lvl){
+    // Quering a number of points inside curve shape
+    int $nVerts = `getAttr ($perimeter + ".spans")`;
+
+    int $i = 0;
+    string $vtxList[];
+    // Storing all the points under an array variable
+    for ($i = 0; $i<$nVerts; $i++){
+        $vtxList[$i] = ($perimeter + ".cv[" + $i + "]");
+    }
+    // Storing an 'X' coordinates of all the points under an array
+    float $xCoords[];
+    for ($i=0; $i < $nVerts; $i++){
+        float $vtxCoord[] = `pointPosition $vtxList[$i]`;
+        $xCoords[$i] = $vtxCoord[0];
+    }
+    // Storing an 'Z' coordinates of all the points under an array
+    float $zCoords[];
+    for ($i=0; $i < $nVerts; $i++){
+        float $vtxCoord[] = `pointPosition $vtxList[$i]`;
+        $zCoords[$i] = $vtxCoord[2];
+    }
+    // Storing an 'Y' coordinate
+    float $yCoord = $levelHeight*$levelsNum;
+    // Creating commands for generating the roof
+    string $roofCommand = "polyCreateFacet -tx 1";
+    for ($i=0; $i<$nVerts; $i++){
+        $roofCommand = ($roofCommand + " -p " + $xCoords[$i] + " " + $yCoord + " " + $zCoords[$i]);
+    }
+    $roofCommand = ($roofCommand + " -n " + $lvl + "_roof_0;");
+    print ("\n" + $roofCommand);
+    eval($roofCommand);
+}
+
+
+// ************************************************************************************************ //
+
+/* Roof Set Dressing */
+
+proc roofSetDressing(string $antenna, string $roofAC, string $roofExit, int $railing, float $railingHeight, float $railingThickness, string $lvl, float $edgePad){
+    // Naming the roof
+    string $roofObj = $lvl + "_roof_0";
+    // Query roof's height
+    float $roofHeight[] = `pointPosition ($roofObj + ".vtx[0]")`;
+    // Find out the closest 4 points to the XZ-origin
+    float $closestPosX = 50000;
+    float $closestPosZ = 50000;
+    float $closestNegX = -50000;
+    float $closestNegZ = -50000;
+    
+    int $vtxCount[] = `polyEvaluate -v $roofObj`;
+    print ("\n" + $vtxCount[0] + "\n");
+    // Comparing the point's X and Z values to find out closest positive and negative values
+    int $i=0;
+    for ($i=0; $i<$vtxCount[0]; $i++){
+        float $vtxCoords[] = `pointPosition ($roofObj + ".vtx[" + $i + "]")`;
+        // Looking for 'closest positive' X
+        if ($vtxCoords[0] > 0 && $vtxCoords[0] < $closestPosX){
+            $closestPosX = $vtxCoords[0];
+        }
+        // Looking for 'closest negative' X
+        if ($vtxCoords[0] < 0 && $vtxCoords[0] > $closestNegX){
+            $closestNegX = $vtxCoords[0];
+        }
+        // Looking for 'closest positive' Z
+        if ($vtxCoords[2] > 0 && $vtxCoords[2] < $closestPosZ){
+            $closestPosZ = $vtxCoords[2];
+        }
+        // Looking for 'closest negative' Z
+        if ($vtxCoords[2] < 0 && $vtxCoords[2] > $closestNegZ){
+            $closestNegZ = $vtxCoords[2];
+        }        
+    }
+    
+    // Placing Roof Exit
+    if ($roofExit != "No Roof Exit!") {
+        string $tempString[] = `instance $roofExit`;
+        float $rotValue = `rand90Rotation`;
+        float $moveX = rand(($closestNegX + $edgePad), ($closestPosX - $edgePad));
+        float $moveZ = rand(($closestNegZ + $edgePad), ($closestPosZ - $edgePad));
+        move -ws -a $moveX $roofHeight[1] $moveZ $tempString[0]; 
+        rotate -ws -a 0 $rotValue 0 $tempString[0];
+    } else { print ("\n" + $roofExit + "\n"); }
+    
+    // Placing Roof Exit
+    if ($roofAC != "No Roof AC!") {
+        string $tempString[] = `instance $roofAC`;
+        float $rotValue = `rand90Rotation`;
+        float $moveX = rand(($closestNegX + $edgePad), ($closestPosX - $edgePad));
+        float $moveZ = rand(($closestNegZ + $edgePad), ($closestPosZ - $edgePad));
+        move -ws -a $moveX $roofHeight[1] $moveZ $tempString[0]; 
+        rotate -ws -a 0 $rotValue 0 $tempString[0];
+    } else { print ("\n" + $roofAC + "\n"); }
+    
+    // Placing antennas
+    if ($antenna != "No Antennas!") {
+        string $tempString[] = `instance $antenna`;
+        float $rotValue = `rand90Rotation`;
+        float $moveX = rand(($closestNegX + $edgePad), ($closestPosX - $edgePad));
+        float $moveZ = rand(($closestNegZ + $edgePad), ($closestPosZ - $edgePad));
+        move -ws -a $moveX $roofHeight[1] $moveZ $tempString[0]; 
+        rotate -ws -a 0 $rotValue 0 $tempString[0];
+    } else { print ("\n" + $antenna + "\n"); }
+
+    // Generating railing
+    if ($railing != 0) {
+        string $vtxList[];
+        // Storing all the points under an array variable
+        for ($i = 0; $i<$vtxCount[0]; $i++){
+            $vtxList[$i] = ($roofObj + ".vtx[" + $i + "]");
+        }
+        // Storing an 'X' coordinates of all the points under an array
+        float $xCoords[];
+        for ($i=0; $i < $vtxCount[0]; $i++){
+            float $vtxCoord[] = `pointPosition $vtxList[$i]`;
+            $xCoords[$i] = $vtxCoord[0];
+        }
+        // Storing an 'Z' coordinates of all the points under an array
+        float $zCoords[];
+        for ($i=0; $i < $vtxCount[0]; $i++){
+            float $vtxCoord[] = `pointPosition $vtxList[$i]`;
+            $zCoords[$i] = $vtxCoord[2];
+        }
+        // Creating commands for generating the walls
+        string $railingPoly[];
+        for ($i=0; $i<$vtxCount[0]; $i++){
+            if ($i < ($vtxCount[0] - 1)){
+                $railingPoly[$i] = ("polyCreateFacet -tx 1 -p " + $xCoords[$i] + " " + $roofHeight[1] + " " + $zCoords[$i] + " -p " + $xCoords[$i+1] + " " + $roofHeight[1] + " " + $zCoords[$i+1] + " -p " + $xCoords[$i+1] + " " + ($railingHeight + $roofHeight[1]) + " " + $zCoords[$i+1] + " -p " + $xCoords[$i] + " " + ($railingHeight + $roofHeight[1]) + " " + $zCoords[$i] + " -n " + "roofRailing_" + "0" + $i + ";");
+            } else {
+                $railingPoly[$i] = ("polyCreateFacet -tx 1 -p " + $xCoords[$i] + " " + $roofHeight[1] + " " + $zCoords[$i] + " -p " + $xCoords[0] + " " + $roofHeight[1] + " " + $zCoords[0] + " -p " + $xCoords[0] + " " + ($railingHeight + $roofHeight[1]) + " " + $zCoords[0] + " -p " + $xCoords[$i] + " " + ($railingHeight + $roofHeight[1]) + " " + $zCoords[$i] + " -n " + "roofRailing_" + "0" + $i + ";");
+            }
+        }
+        // Generating
+        string $railings[];
+        for ($i=0; $i<$vtxCount[0]; $i++){
+            eval ($railingPoly[$i]);
+            $railings[$i] = ("roofRailing_" + "0" + $i);
+        }
+        // Combining the railings under one mesh
+        select -cl;
+        for ($rail in $railings){
+            select -add $rail;
+        }
+        string $railingObj[] = `polyUnite -ch 0 -mergeUVSets 1 -centerPivot -n ($lvl + "_roofRailings_01")`;
+        // Adding thickness to the railings
+        int $faceCount[] = `polyEvaluate -f $railingObj[0]`;
+        polyExtrudeFacet -ch 0 -keepFacesTogether 1 -pvx 250 -pvy 2400 -pvz -250 -divisions 1 -twist 0 -taper 1 -off 0 -thickness -20 -smoothingAngle 30 ($railingObj[0] + ".f[0:" + $faceCount[0] + "]");
+        select -r $railingObj[0];
+        ReversePolygonNormals;
+    } else { print ("\n" + "No Roof Railing!" + "\n"); }
+}
+
+
+// ************************************************************************************************ //
+
+/* Fire Excape Ladder Generation */
+
+proc fireEscapeLadder(string $lvl, int $lvlNum, string $window, float $lvlHeight, int $sectionsPerLvl, float $stepDepth, float $stepWidth, float $stepHeight){
+    
+    // Creating steps
+    int $section = 1;
+    float $sectionHeight = $lvlHeight/$sectionsPerLvl;
+    int $sectionsNum = $lvlNum * $sectionsPerLvl;
+    int $stepsPerSection = $sectionHeight/$stepHeight;
+    int $i=0;
+    // Creating a step objects
+
+    string $step[] = `polyCube -ch 0 -w $stepWidth -h 4 -d $stepDepth -n "fireEscape_step"`;
+    for ($section = 0; $section < $sectionsNum; $section++){
+        // Differenciating between 'odd' and 'even' sections
+        if ($section%2 != 0){
+            for ($i=0; $i<$stepsPerSection; $i++){
+                float $stepXPos = $stepWidth/2;
+                float $stepYPos = $stepHeight*$i + ($section * $sectionHeight);
+                float $stepZPos = $stepDepth*$i;
+                if ($i == 0) {
+                    string $stepInst[] = `instance -n ("inst_" + $step[0]) $step[0]`;
+                    move -r -os $stepXPos $stepYPos ($stepZPos - (5 * $stepDepth)) $stepInst[0];
+                    scale 1 1 11 $stepInst[0];
+                } else if ($i == ($stepsPerSection - 1)){
+                    string $stepInst[] = `instance -n ("inst_" + $step[0]) $step[0]`;
+                    move -r -os $stepXPos $stepYPos ($stepZPos + (2 * $stepDepth)) $stepInst[0];
+                    scale 1 1 5 $stepInst[0];
+                } else {
+                    string $stepInst[] = `instance -n ("inst_" + $step[0]) $step[0]`;
+                    move -r -os $stepXPos $stepYPos $stepZPos $stepInst[0];
+                }
+            }
+        } else {
+            for ($i=0; $i<$stepsPerSection; $i++){
+                float $stepXPos = (-1) * $stepWidth/2;
+                float $stepYPos = $stepHeight*$i + ($section * $sectionHeight);
+                float $stepZPos = $stepDepth*$i*(-1);
+                if ($i == 0) {
+                    string $stepInst[] = `instance -n ("inst_" + $step[0]) $step[0]`;
+                    move -r -os $stepXPos $stepYPos ($stepZPos + (5 * $stepDepth)) $stepInst[0];
+                    scale 1 1 11 $stepInst[0];
+                } else if ($i == ($stepsPerSection - 1)){
+                    string $stepInst[] = `instance -n ("inst_" + $step[0]) $step[0]`;
+                    move -r -os $stepXPos $stepYPos ($stepZPos - (2 * $stepDepth)) $stepInst[0];
+                    scale 1 1 5 $stepInst[0];
+                } else {
+                    string $stepInst[] = `instance -n ("inst_" + $step[0]) $step[0]`;
+                    move -r -os $stepXPos $stepYPos $stepZPos $stepInst[0];
+                }
+            }
+        }  
+    }
+    delete $step[0];
+    // Creating columns
+    string $column[] = `polyCube -ch 0 -w 15 -h ($lvlHeight * $lvlNum) -d 15 -n "fireEscape_column"`;
+    // Calculating locations of the columns
+    float $colYLoc = ($lvlHeight * $lvlNum)/2;
+    float $colXNegLoc = $stepWidth*(-1);
+    float $colXPosLoc = $stepWidth;
+    float $colXMidLoc = 0;
+    float $colZNegLoc = $stepDepth*(-10.5);
+    float $colZPosLoc = $stepDepth*10.5;
+    float $colZMidLoc = 0;
+    // Instancing columns into positions
+    instance -n ($column[0] + "_A") $column[0]; move $colXNegLoc $colYLoc $colZNegLoc ($column[0] + "_A");
+    instance -n ($column[0] + "_B") $column[0]; move $colXMidLoc $colYLoc $colZNegLoc ($column[0] + "_B");
+    instance -n ($column[0] + "_C") $column[0]; move $colXPosLoc $colYLoc $colZNegLoc ($column[0] + "_C");
+    instance -n ($column[0] + "_D") $column[0]; move $colXPosLoc $colYLoc $colZMidLoc ($column[0] + "_D");
+    instance -n ($column[0] + "_E") $column[0]; move $colXPosLoc $colYLoc $colZPosLoc ($column[0] + "_E");
+    instance -n ($column[0] + "_F") $column[0]; move $colXMidLoc $colYLoc $colZPosLoc ($column[0] + "_F");
+    instance -n ($column[0] + "_G") $column[0]; move $colXNegLoc $colYLoc $colZPosLoc ($column[0] + "_G");
+    delete $column[0];
+    //Creating railing
+    float $railvertStep = 80;
+    string $frontRail[] = `polyCube -ch 0 -d ($stepDepth*21) -w 8 -h 6 -n "fireEscape_frontRail"`;
+    string $sideRailA[] = `polyCube -ch 0 -d 8 -w ($stepWidth*2) -h 6 -n "fireEscape_sideRail_A"`;
+    string $sideRailB[] = `polyCube -ch 0 -d 8 -w ($stepWidth*2) -h 6 -n "fireEscape_sideRail_B"`;
+    
+    for ($i=1; $i<(($lvlHeight * $lvlNum)/$railvertStep); $i++){
+        string $railYLoc = $railvertStep * $i;
+        instance -n ("inst_" + $frontRail[0] + "_" + $i) $frontRail[0]; move $colXPosLoc $railYLoc 0 ("inst_" + $frontRail[0] + "_" + $i);
+        instance -n ("inst_" + $sideRailA[0] + "_" + $i) $sideRailA[0]; move 0 $railYLoc $colZNegLoc ("inst_" + $sideRailA[0] + "_" + $i);
+        instance -n ("inst_" + $sideRailB[0] + "_" + $i) $sideRailB[0]; move 0 $railYLoc $colZPosLoc ("inst_" + $sideRailB[0] + "_" + $i);
+    }
+    select -r "*fireEscape*"; doGroup 0 1 1; rename "grp_fireEscape";select -cl;
+}
+
+
+// ************************************************************************************************ //
+
+/* UI */
+
+proc buildingWizard() {
+    
+    // UI variables
+    global string $winName = "buildingWin";
+    global string $columnLayout = "columnLayoutMain";
+    global string $storiesNumField = "storiesNumberField";
+    global string $levelFeaturesCB = "levelFeaturesCheckBox";
+    global string $levelNameField = "levelNameField";
+    global string $groundFloorHeightField = "groundFloorHeightField";
+    global string $floorHeightField = "floorHeightField";
+    global string $reinforcementDistField = "reinforcementDistField";
+    global string $reinforcementScaleField = "reinforcementScaleField";
+    global string $windowWidthField = "windowWidthField";;
+    global string $windowHeightField = "windowHeightField";
+    global string $windowDepthField = "windowDepthField";
+    global string $eavesScaleField = "eavesScaleField";
+    global string $cornerColScaleField = "cornerColScaleField";
+    global string $roofRailingsHeightField = "roofRailingsHeightField";
+    global string $roofRailingsDepthField = "roofRailingsDepthField";
+    global string $roofEdgeDistanceField = "roofEdgeDistanceField";
+    
+    // Building assets variables
+    global string $perimeterAsset[];
+    global string $windowAsset[];
+    global string $windowBBoxAsset[]; $windowBBoxAsset[0] = "_";
+    global string $cornerColAsset[];
+    global string $columnAsset[];
+    global string $reinforcementAsset[];
+    global string $eavesAsset[];
+    global string $antennaAsset[]; $antennaAsset[0] = "No Antennas!";
+    global string $roofExitAsset[]; $roofExitAsset[0] = "No Roof Exit!";
+    global string $roofACAsset[]; $roofACAsset[0] = "No Roof AC!";
+    
+    // Building structure variables
+    global string $lvlName = "levelA";
+    global int $floorsNum = 1;
+    global float $floorHeight = 390;
+    global float $groundFloorHeight = 780;
+    global float $reinforcementDist = 200;
+    global float $reinforcementScale = 1;
+    global float $windowWidth = 300;
+    global float $windowHeight = 120;
+    global float $windowDepth = 20;
+    global float $windowHorPad = 40;
+    global float $windowVertPad = 60;
+    global float $eavesScale = 1;
+    global float $cornerColScale = 1;
+    
+    global float $roofRailingHeight = 120;
+    global float $roofRailingDepth = 30;
+    global float $roofEdgePad = 300;
+    
+    global int $groundFloorBool = 0;
+    global int $cornerColumnsBool = 0;
+    global int $reinforcementBool = 0;
+    global int $eavesBool = 0;
+    global int $roofRailingsBool = 0;
+    
+    // Building creation commands registration:
+    global string $createWalls = "_";
+    $createWalls = "wallsGen($perimeterAsset[0], $floorHeight, $lvlName);";
+    
+    global string $createWindows = "_";
+    $createWindows = "windowPlacement($perimeterAsset[0], $groundFloorHeight, $floorHeight, $windowHorPad, $windowVertPad, $windowWidth, $windowHeight, $windowDepth, $lvlName);";
+    
+    global int $i = 1;
+    
+    if (`window -exists $winName`){
+        deleteUI -window $winName;
+    }
+    
+    window -title "Building Creation Wizard"
+       -iconName "BuildWiz"
+       -widthHeight 600 800 $winName;
+    columnLayout -adjustableColumn true -rowSpacing 2;
+        // ------------------------------------------------------------------------------------------------------------------------
+        // AREA 1: Assets Registration
+        text -label "Assets Registration" -align "center" -h 20 -fn "boldLabelFont" -bgc .2 .2 .2;
+        gridLayout -numberOfColumns 3 -cellWidthHeight 200 20;
+            // PERIMETER registration button
+            button -label "Update Perimeter" -command ("$perimeterAsset = `ls -sl -tr`; print \"Perimeter Updated\"");
+            // WINDOW registration button
+            button -label "Update Window" -command ("$windowAsset = `ls -sl -tr`; if (`objExists (\"BBox_\" + $windowAsset[0])`){$windowBBoxAsset[0] = (\"BBox_\" + $windowAsset[0]);}; print \"Window Updated\";");
+            // COLUMN registration button
+            //button -label "Update Column" -command ("$columnAsset = `ls -sl -tr`; print \"Column Updated\"");
+            // CORNER COLUMN registration button
+            button -label "Update Corner Col" -command ("$cornerColAsset = `ls -sl -tr`; print \"Corner Col Updated\"");
+            // REINFORCEMENT registration button
+            button -label "Update Reinforcement" -command ("$reinforcementAsset = `ls -sl -tr`; print \"Reinforcement Updated\"");
+            // EAVES registration button
+            button -label "Update Eaves" -command ("$eavesAsset = `ls -sl -tr`; print \"Eaves Updated\"");
+            // ROOF EXIT registration button
+            button -label "Update Roof Exit" -command ("$roofExitAsset = `ls -sl -tr`; print \"Roof Exit Updated\"");
+            // ROOF ANTENNA registration button
+            button -label "Update Antenna" -command ("$antennaAsset = `ls -sl -tr`; print \"Antenna Updated\"");
+            // ROOF AC registration button
+            button -label "Update Roof AC" -command ("$roofACAsset = `ls -sl -tr`; print \"Roof AC Updated\"");
+        setParent..;
+        separator -height 10 -style "in";
+        
+        // ------------------------------------------------------------------------------------------------------------------------
+        // AREA 2: Structural Choices
+        text -label "Structural Choices" -align "center" -h 20 -fn "boldLabelFont" -bgc .2 .2 .2;
+        // Features checkboxes
+        checkBoxGrp -numberOfCheckBoxes 4 -label "Features" -labelArray4 "Roof Railings" "Corner Columns" "Reinforcement" "Eaves" $levelFeaturesCB;
+        separator -height 10 -style "in";
+        
+        // ------------------------------------------------------------------------------------------------------------------------
+        // AREA 3: Parameters
+        text -label "Parameters" -align "center" -h 20 -fn "boldLabelFont" -bgc .2 .2 .2;
+        // Level name field
+        textFieldGrp -label "Level Name" -tx "levelA" $levelNameField;
+        // Ground floor height
+        floatSliderGrp -label "Ground Floor Height" -field true -minValue 210 -maxValue 1200 -v 780 -ss 10 $groundFloorHeightField;
+        // Floor height
+        floatSliderGrp -label "Floor Height" -field true -minValue 100 -maxValue 1200 -v 390 -ss 10 $floorHeightField;
+        // Number of floor in the building
+        intSliderGrp -label "Floors Number" -min 1 -max 100 -value 1 -step 1 -field true $storiesNumField;
+        // Reinforcement Distance
+        floatSliderGrp -label "Reinforcement Distance" -field true -minValue 0 -maxValue 5000 -v 200 -ss 10 $reinforcementDistField;
+        // Window Width
+        floatSliderGrp -label "Window Width" -field true -minValue 0 -maxValue 800 -v 300 -ss 10 $windowWidthField;
+        // Window Height
+        floatSliderGrp -label "Window Height" -field true -minValue 0 -maxValue 1000 -v 120 -ss 10 $windowHeightField;
+        // Window Depth
+        floatSliderGrp -label "Window Depth" -field true -minValue -200 -maxValue 200 -v 20 -ss 10 $windowDepthField;
+        // Eaves scale
+        floatSliderGrp -label "Eaves Scale" -field true -minValue 0 -maxValue 10 -v 1 -ss .1 $eavesScaleField;
+        // Corner Columns Scale
+        floatSliderGrp -label "Corner Columns Scale" -field true -minValue 0 -maxValue 10 -v 1 -ss .1 $cornerColScaleField;
+        // Reinforcement Scale
+        floatSliderGrp -label "Reinforcement Scale" -field true -minValue 0 -maxValue 10 -v 1 -ss .1 $reinforcementScaleField;
+        // Roof Railing Height
+        floatSliderGrp -label "Roof Railing Height" -field true -minValue 0 -maxValue 200 -v 120 -ss .1 $roofRailingsHeightField;
+        // Roof Railing Depth
+        floatSliderGrp -label "Roof Railing Depth" -field true -minValue 0 -maxValue 200 -v 30 -ss .1 $roofRailingsDepthField;
+        // Roof Edge Distance
+        floatSliderGrp -label "Roof Edge Distance" -field true -minValue 0 -maxValue 5000 -v 300 -ss .1 $roofEdgeDistanceField;
+        // Update parameters button
+        button -label "Update Parameters" -command ("$lvlName = `textFieldGrp -q -tx $levelNameField`; $floorsNum = `intSliderGrp -q -v $storiesNumField`; $floorHeight = `floatSliderGrp -q -v $floorHeightField`; $groundFloorHeight = `floatSliderGrp -q -v $groundFloorHeightField`; $reinforcementDist = `floatSliderGrp -q -v $reinforcementDistField`; $reinforcementScale = `floatSliderGrp -q -v $reinforcementScaleField`; $windowWidth = `floatSliderGrp -q -v $windowWidthField`; $windowHeight = `floatSliderGrp -q -v $windowHeightField`; $windowDepth = `floatSliderGrp -q -v $windowDepthField`; $eavesScale = `floatSliderGrp -q -v $eavesScaleField`; $cornerColScale = `floatSliderGrp -q -v $cornerColScaleField`;");
+         
+        separator -height 10 -style "in";
+        
+        // ------------------------------------------------------------------------------------------------------------------------
+        // AREA 4: Generating
+        // Generate a building
+        text -label "Generating" -align "center" -h 20 -fn "boldLabelFont" -bgc .2 .2 .2;
+        
+        button -label "Progress Check!" -command ("print (\"floors num: \" + $floorsNum + \"\\n\"); print (\"floor height: \" + $floorHeight + \"\\n\"); print (\"Ground Floor Height: \" + $groundFloorHeight + \"\\n\"); print (\"Reinforcement Distance: \" + $reinforcementDist + \"\\n\"); print (\"Window Width: \" + $windowWidth + \"\\n\"); print (\"Window Height: \" + $windowHeight + \"\\n\"); print (\"Window Depth: \" + $windowDepth + \"\\n\"); print (\"Eaves Scale: \" + $eavesScale + \"\\n\"); print (\"Corner Columns Scale: \" + $cornerColScale + \"\\n\"); print (\"Reinforcement Scale: \" + $reinforcementScale + \"\\n\");");
+        button -label "Generate Walls" -command ("wallsGen($perimeterAsset[0], $floorHeight, $lvlName);");
+        button -label "Generate Windows" -command ($createWindows + " select -r \"loc_window*\"; $winLocators = `ls -sl -tr`; select -cl; instAtLocators($winLocators, $windowAsset[0], $lvlName); if ($windowBBoxAsset[0] != \"_\"){bboxPlacement($windowAsset[0], $windowBBoxAsset[0], $lvlName);} delete \"loc_window*\";");
+        button -label "Press In Windows" -command ("windowsCutOut(($lvlName + \"_wall_\"), ($lvlName + \"_\" + $windowAsset[0] + \"_\"), $windowDepth, $windowBBoxAsset[0], $lvlName);");
+        button -label "Generate Corner Columns" -command ("if ((`checkBoxGrp -q -v2 $levelFeaturesCB`) > 0){cornerColumnsInst($perimeterAsset[0], $cornerColAsset[0], $lvlName);} else {print \"No Columns...\";}");
+        button -label "Generate Reinforcements" -command ("if ((`checkBoxGrp -q -v3 $levelFeaturesCB`) > 0){reinforcementPlacement($perimeterAsset[0], $reinforcementAsset[0], $reinforcementDist, $lvlName);} else {print \"No Reinforcements...\";}");
+        button -label "Generate Eaves" -command ("if ((`checkBoxGrp -q -v4 $levelFeaturesCB`) > 0){extrudeEaves($perimeterAsset[0], $eavesAsset[0], $lvlName);} else {print \"No Eaves...\";}");
+        button -label "Group Level" -command ("group -em -n (\"grp_\" + $lvlName); parent ($lvlName + \"*\") (\"grp_\" + $lvlName); select -cl;");
+        button -label "Build Height" -command ("instanceLevel($lvlName, $floorHeight, $floorsNum); group -em -n \"grp_building\"; parent (\"grp_\" + $lvlName + \"*\") \"grp_building\";");
+        button -label "Generate Roof" -command ("roofGen($perimeterAsset[0], $floorHeight, $floorsNum, $lvlName); parent ($lvlName + \"_roof_0\") \"grp_building\"; select -cl;");
+        button -label "Populate Roof" -command ("$roofRailingsBool = `checkBoxGrp -q -v1 $levelFeaturesCB`; $roofRailingHeight = `floatSliderGrp -q -v $roofRailingsHeightField`; $roofRailingDepth = `floatSliderGrp -q -v $roofRailingsDepthField`; $roofEdgePad = `floatSliderGrp -q -v $roofEdgeDistanceField`; $lvlName = `textFieldGrp -q -text $levelNameField`; roofSetDressing($antennaAsset[0], $roofACAsset[0], $roofExitAsset[0], $roofRailingsBool, $roofRailingHeight, $roofRailingDepth, $lvlName, $roofEdgePad);");
+        button -label "Fire Escape" -command ("fireEscapeLadder($lvlName, $floorsNum, $windowAsset[0], $floorHeight, 2, 25, 120, 25);");
+
+        button -label "Close" -command ("deleteUI -window " + $winName);
+    setParent $winName;
+    showWindow $winName;   
+}
+
+buildingWizard;
+
+
+

@@ -1,23 +1,65 @@
 /* Building wizard */
 /* created by RJ. 2016 */
 
+
 /* Edge length calculator */
-
 global proc float edgeLength(float $ptX1, float $ptZ1, float $ptX2, float $ptZ2) {
-
     float $edgeLength = 0;
-    
     $edgeLength = sqrt(($ptX2 - $ptX1)*($ptX2 - $ptX1) + ($ptZ2 - $ptZ1)*($ptZ2 - $ptZ1));
-    
-    return $edgeLength;
-    
+    return $edgeLength;    
 }
 
+// ************************************************************************************************ //
+
+/* Curve Spans Length */
+
+proc float[] curveSpansLength(string $curve){
+    
+    int $i=0;
+    int $nCV = 1;
+    int $nSpans = `getAttr ($curve + ".spans")`;
+    // Counting number of CVs
+    select -r ($curve + ".cv[0]");
+    string $cvSel[];
+    for ($i=0; $nCV < ($nSpans+3); $i++){
+        $cvSel = `pickWalk -d "Left"`;
+        if ($cvSel[0] != ($curve + ".cv[0]")){
+            $nCV++;
+        } else {
+            break;
+        }
+    }
+    print ("\nCurve has " + $nCV + " CVs");
+    print ("\nCurve has " + $nSpans + " Spans");
+    // Calculating the perimeter length
+    float $perimeter = `arclen $curve`;
+    // Length for each wall
+    float $spansLength[];
+    if ($nCV == $nSpans){
+        for ($i=0; $i<$nCV; $i++){
+            if ($i == ($nCV-1)){
+                float $cvPos_A[] = `pointPosition ($curve + ".cv[" + $i + "]")`;
+                float $cvPos_B[] = `pointPosition ($curve + ".cv[0]")`;
+                $spansLength[$i] = sqrt(($cvPos_B[0] - $cvPos_A[0])*($cvPos_B[0] - $cvPos_A[0]) + (($cvPos_B[2] - $cvPos_A[2])*($cvPos_B[2] - $cvPos_A[2])));
+            } else {
+                float $cvPos_A[] = `pointPosition ($curve + ".cv[" + $i + "]")`;
+                float $cvPos_B[] = `pointPosition ($curve + ".cv[" + ($i + 1) + "]")`;
+                $spansLength[$i] = sqrt(($cvPos_B[0] - $cvPos_A[0])*($cvPos_B[0] - $cvPos_A[0]) + (($cvPos_B[2] - $cvPos_A[2])*($cvPos_B[2] - $cvPos_A[2])));
+            }
+        }
+    } else {
+        for ($i=0; $i<($nCV-1); $i++){
+            float $cvPos_A[] = `pointPosition ($curve + ".cv[" + $i + "]")`;
+            float $cvPos_B[] = `pointPosition ($curve + ".cv[" + ($i + 1) + "]")`;
+            $spansLength[$i] = sqrt(($cvPos_B[0] - $cvPos_A[0])*($cvPos_B[0] - $cvPos_A[0]) + (($cvPos_B[2] - $cvPos_A[2])*($cvPos_B[2] - $cvPos_A[2])));
+        }
+    }
+    return $spansLength;
+}
 
 // ************************************************************************************************ //
 
 /* Instance at selected Locators tool */
-
 proc instAtLocators(string $locators[], string $obj, string $lvl) {
     int $j = 0;
     // Instancing object
@@ -30,11 +72,9 @@ proc instAtLocators(string $locators[], string $obj, string $lvl) {
     }
 }
 
-
 // ************************************************************************************************ //
 
 /* Random 90 degrees angle generation */
-
 global proc float rand90Rotation(){
     float $rotValue = rand(0,360);
     if ($rotValue <= 90 && $rotValue > 0) {
@@ -52,7 +92,6 @@ global proc float rand90Rotation(){
 // ************************************************************************************************ //
 
 /* Walls generator */
-
 proc wallsGen(string $curveShape, float $locFloorHeight, string $lvl){
     // Quering a number of points inside curve shape
     int $nVerts = `getAttr ($curveShape + ".spans")`;
@@ -87,7 +126,6 @@ proc wallsGen(string $curveShape, float $locFloorHeight, string $lvl){
         } else {
             $wallPoly[$i] = ("polyCreateFacet -tx 1 -p " + $xCoords[$i] + " " + 0 + " " + $zCoords[$i] + " -p " + $xCoords[0] + " " + 0 + " " + $zCoords[0] + " -p " + $xCoords[0] + " " + $locFloorHeight + " " + $zCoords[0] + " -p " + $xCoords[$i] + " " + $locFloorHeight + " " + $zCoords[$i] + " -n " + $lvl + "_wall_0" + $i + ";");
         }
-        
     }
 
     // Generating
@@ -105,12 +143,11 @@ proc wallsGen(string $curveShape, float $locFloorHeight, string $lvl){
     polyUnite -ch 0 -mergeUVSets 1 -centerPivot -n ($lvl + "_wall_" + "01");
 }
 
-
 // ************************************************************************************************ //
 
 /* Windows placement */
 
-proc windowPlacement(string $shapeCurve, float $groundFloorHeight, float $floorHeight, float $horPad, float $vertPad, float $winWidth, float $winHeight, float $winDepth, string $lvl){
+proc windowPlacement(string $shapeCurve, float $groundFloorHeight, float $floorHeight, float $horPag, float $vertPag, float $winWidth, float $winHeight, float $winDepth, string $lvl){
     
     int $i = 0;
     int $nVerts = `getAttr ($shapeCurve + ".spans")`;
@@ -130,7 +167,7 @@ proc windowPlacement(string $shapeCurve, float $groundFloorHeight, float $floorH
     int $windowsNum[];
     
     for ($i=0; $i<$nVerts; $i++){
-        $windowsSpace[$i] = $wallsLength[$i] - ($horPad*2);
+        $windowsSpace[$i] = $wallsLength[$i] - ($horPag*2);
         $windowsNum[$i] = ($windowsSpace[$i]/$winWidth);
     }
     
@@ -144,7 +181,7 @@ proc windowPlacement(string $shapeCurve, float $groundFloorHeight, float $floorH
         print ("wall " + $i + " summary length is:\n" + $distUpToThePoint + "\n"); 
         float $step = 1/$perimeter;
         for ($k=0; $k<$windowsNum[$i]; $k++){
-            float $winLocation = ($distUpToThePoint + $horPad + ($k*$winWidth) + ($winWidth/2) + ($wallsLength[$i] - $horPad*2 - $winWidth*$windowsNum[$i])/2)*$step;
+            float $winLocation = ($distUpToThePoint + $horPag + ($k*$winWidth) + ($winWidth/2) + ($wallsLength[$i] - $horPag*2 - $winWidth*$windowsNum[$i])/2)*$step;
             string $loc[] = `spaceLocator -n "loc_window1"`;
             string $moPath = `pathAnimation -fractionMode true -follow true -followAxis x -upAxis y -worldUpType "vector" -worldUpVector 0 1 0 -inverseUp false -inverseFront true -bank false -startTimeU 1 -endTimeU 2 $loc[0] $shapeCurve`;
             CBdeleteConnection ($moPath + ".u");
@@ -157,11 +194,10 @@ proc windowPlacement(string $shapeCurve, float $groundFloorHeight, float $floorH
             CBdeleteConnection ($loc[0] + ".ry");
             CBdeleteConnection ($loc[0] + ".rz");
             
-            move -r 0 $vertPad 0 $loc[0];
+            move -r 0 $vertPag 0 $loc[0];
         }
     }
 }
-
 
 // ************************************************************************************************ //
 /* Clonning Window BBoxes onto windows' positions */
@@ -199,7 +235,7 @@ proc windowsCutOut(string $wallPrefix, string $windowPrefix, float $depth, strin
         print $winBBox;
         for ($box in $winBBox){
             move -r -os 0 0 $depth $box;
-            scale -r -1 1 $depth $box;
+            scale -r -1 1 ($depth/3) $box;
         }
     } else {
         // Select all level windows
@@ -242,7 +278,6 @@ proc windowsCutOut(string $wallPrefix, string $windowPrefix, float $depth, strin
     select -r ($windowPrefix + "*"); move -r -os 0 0 $depth; select -cl;
 }
 
-
 // ************************************************************************************************ //
 
 /* Corner column instancing */
@@ -280,38 +315,102 @@ proc cornerColumnsInst(string $curveShape, string $cornerColumn, string $lvl){
     }
 }    
 
-
 // ************************************************************************************************ //
 
-/* Reinforcement Placement */
+/* Reinforcements Placement */
 
-proc reinforcementPlacement(string $shapeCurve, string $reinforcementObj, float $columnsInterval, string $lvl){
-    
+proc reinforcementsPlacement(string $distribution, string $lvl, string $perimeterObj, string $reinforcementObj, string $windowObj, int $unitsInCluster, int $clustersNum, float $unitWidth, float $clusterInterval){
     int $i = 0;
-    // Calculating the perimeter length
-    float $perimeter = `arclen $shapeCurve`;
-    int $colNum = $perimeter/$columnsInterval;
-    float $colNumFloat = $perimeter/$columnsInterval;
-
-    // Finding out a position on the curve of each possible window
-    for ($i=1; $i<$colNum; $i++){
-        float $colPosition = ((1/$colNumFloat)*$i);
-        string $tempSel[] = `instance -n ($lvl + "_reinforcement_0" + $i) $reinforcementObj`;
-        string $moPath = `pathAnimation -fractionMode true -follow true -followAxis x -upAxis y -worldUpType "vector" -worldUpVector 0 1 0 -inverseUp false -inverseFront true -bank false -startTimeU 1 -endTimeU 2 $tempSel[0] $shapeCurve`;
-        CBdeleteConnection ($moPath + ".u");
-        setAttr ($moPath + ".u") $colPosition;
-        
-        CBdeleteConnection ($tempSel[0] + ".tx");
-        CBdeleteConnection ($tempSel[0] + ".ty");
-        CBdeleteConnection ($tempSel[0] + ".tz");
-        CBdeleteConnection ($tempSel[0] + ".rx");
-        CBdeleteConnection ($tempSel[0] + ".ry");
-        CBdeleteConnection ($tempSel[0] + ".rz");
-
-        delete $moPath;
-    }  
+    int $wallsNum = `getAttr ($perimeterObj + ".spans")`;
+    // Perimeter length
+    float $perimeter = `arclen $perimeterObj`;
+    // Length for each wall
+    float $wallsLength[] = `curveSpansLength($perimeterObj)`;
+    // Width for a reinforcements cluster
+    float $clusterWidth = ($unitsInCluster * $unitWidth) + $clusterInterval;
+    // Calculating how many clusters cam be fit inside each wall
+    int $clustersInWall[];
+    for ($i=0; $i<$wallsNum; $i++){
+        $clustersInWall[$i] = ($wallsLength[$i]/($unitWidth + $clusterInterval));
+    }
+    print ("\nClusters in wall:\n"); print $clustersInWall;
+    // Translating metric units into 'steps' relative to the curve's length
+    float $step = 1/$perimeter;
+    // Looking for a position of the perimeter curve for each possible cluster
+    // If distribution is set to 'Even'
+    if ($distribution == "even"){
+        for ($i=0; $i<$wallsNum; $i++){
+            int $k=0;
+            float $distUpToThePoint = 0;
+            for ($k=0; $k<($i); $k++){
+                $distUpToThePoint += $wallsLength[$k];
+            }
+            print ("wall " + $i + " summary length is:\n" + $distUpToThePoint + "\n"); 
+            for ($k=0; $k<$clustersInWall[$i]; $k++){
+                float $clusterLocation = ($distUpToThePoint + ($k*$clusterWidth) + ($clusterWidth/2) + ($wallsLength[$i] - $clusterWidth*$clustersInWall[$i])/2)*$step;
+                print ("\nNew Cluster Location is: " + $clusterLocation);
+                string $loc[] = `spaceLocator -n "loc_reinforcementCluster1"`;
+                string $moPath = `pathAnimation -fractionMode true -follow true -followAxis x -upAxis y -worldUpType "vector" -worldUpVector 0 1 0 -inverseUp false -inverseFront true -bank false -startTimeU 1 -endTimeU 2 $loc[0] $perimeterObj`;
+                CBdeleteConnection ($moPath + ".u");
+                setAttr ($moPath + ".u") $clusterLocation;
+                
+                CBdeleteConnection ($loc[0] + ".tx");
+                CBdeleteConnection ($loc[0] + ".ty");
+                CBdeleteConnection ($loc[0] + ".tz");
+                CBdeleteConnection ($loc[0] + ".rx");
+                CBdeleteConnection ($loc[0] + ".ry");
+                CBdeleteConnection ($loc[0] + ".rz");
+                
+                delete $moPath;
+            }
+        }
+    } else if ($distribution == "between windows"){
+        select -r ($lvl + "_" + $windowObj + "*");
+        string $winSel[] = `ls -sl -tr`;
+        for ($i=0; $i<(size($winSel)-1); $i++){
+            float $winPosX_A = `getAttr ($winSel[$i] + ".tx")`;
+            float $winPosZ_A = `getAttr ($winSel[$i] + ".tz")`;
+            float $winPosX_B = `getAttr ($winSel[$i+1] + ".tx")`;
+            float $winPosZ_B = `getAttr ($winSel[$i+1] + ".tz")`;
+            float $winRotY_A = `getAttr ($winSel[$i] + ".ry")`;
+            float $winRotY_B = `getAttr ($winSel[$i+1] + ".ry")`;
+            if ($winRotY_A == $winRotY_B) {
+                float $locPosX = ($winPosX_A + $winPosX_B)/2;
+                float $locPosZ = ($winPosZ_A + $winPosZ_B)/2;
+                print ("\nNew Cluster Location is: " + $locPosX + " and " + $locPosZ);
+                string $loc[] = `spaceLocator -n "loc_reinforcementCluster1"`;
+                setAttr ($loc[0] + ".tx") $locPosX;
+                setAttr ($loc[0] + ".tz") $locPosZ;
+                setAttr ($loc[0] + ".ry") $winRotY_A;
+            }
+        }
+    } else if ($distribution == "middle"){
+        for ($i=0; $i<$wallsNum; $i++){
+            int $k=0;
+            float $distUpToThePoint = 0;
+            for ($k=0; $k<($i); $k++){
+                $distUpToThePoint += $wallsLength[$k];
+            }
+            print ("wall " + $i + " summary length is:\n" + $distUpToThePoint + "\n"); 
+            
+            float $clusterLocation = ($distUpToThePoint + ($wallsLength[$i]/2))*$step;
+            print ("\nNew Cluster Location is: " + $clusterLocation);
+            string $loc[] = `spaceLocator -n "loc_reinforcementCluster1"`;
+            string $moPath = `pathAnimation -fractionMode true -follow true -followAxis x -upAxis y -worldUpType "vector" -worldUpVector 0 1 0 -inverseUp false -inverseFront true -bank false -startTimeU 1 -endTimeU 2 $loc[0] $perimeterObj`;
+            CBdeleteConnection ($moPath + ".u");
+            setAttr ($moPath + ".u") $clusterLocation;
+            
+            CBdeleteConnection ($loc[0] + ".tx");
+            CBdeleteConnection ($loc[0] + ".ty");
+            CBdeleteConnection ($loc[0] + ".tz");
+            CBdeleteConnection ($loc[0] + ".rx");
+            CBdeleteConnection ($loc[0] + ".ry");
+            CBdeleteConnection ($loc[0] + ".rz");
+            
+            delete $moPath;
+        }
+    }
 }
-
 
 // ************************************************************************************************ //
 
@@ -332,7 +431,6 @@ proc extrudeEaves(string $perimeterShape, string $eavesProfile, string $lvl) {
     delete $movePath $curve[0] $profile[0] $extrude[0];
 }
 
-
 // ************************************************************************************************ //
 
 /* Floor instancing */
@@ -351,7 +449,6 @@ proc instanceLevel(string $levelName, float $lvlHeight, int $lvlNum){
         move -ws 0 ($lvlHeight * $i) 0 $newGrp;
     }
 }
-
 
 // ************************************************************************************************ //
 
@@ -391,12 +488,11 @@ proc roofGen(string $perimeter, float $levelHeight, int $levelsNum, string $lvl)
     eval($roofCommand);
 }
 
-
 // ************************************************************************************************ //
 
 /* Roof Set Dressing */
 
-proc roofSetDressing(string $antenna, string $roofAC, string $roofExit, int $railing, float $railingHeight, float $railingThickness, string $lvl, float $edgePad){
+proc roofSetDressing(string $antenna, string $roofAC, string $roofExit, int $railing, float $railingHeight, float $railingThickness, string $lvl, float $edgePag){
     // Naming the roof
     string $roofObj = $lvl + "_roof_0";
     // Query roof's height
@@ -435,8 +531,8 @@ proc roofSetDressing(string $antenna, string $roofAC, string $roofExit, int $rai
     if ($roofExit != "No Roof Exit!") {
         string $tempString[] = `instance $roofExit`;
         float $rotValue = `rand90Rotation`;
-        float $moveX = rand(($closestNegX + $edgePad), ($closestPosX - $edgePad));
-        float $moveZ = rand(($closestNegZ + $edgePad), ($closestPosZ - $edgePad));
+        float $moveX = rand(($closestNegX + $edgePag), ($closestPosX - $edgePag));
+        float $moveZ = rand(($closestNegZ + $edgePag), ($closestPosZ - $edgePag));
         move -ws -a $moveX $roofHeight[1] $moveZ $tempString[0]; 
         rotate -ws -a 0 $rotValue 0 $tempString[0];
     } else { print ("\n" + $roofExit + "\n"); }
@@ -445,8 +541,8 @@ proc roofSetDressing(string $antenna, string $roofAC, string $roofExit, int $rai
     if ($roofAC != "No Roof AC!") {
         string $tempString[] = `instance $roofAC`;
         float $rotValue = `rand90Rotation`;
-        float $moveX = rand(($closestNegX + $edgePad), ($closestPosX - $edgePad));
-        float $moveZ = rand(($closestNegZ + $edgePad), ($closestPosZ - $edgePad));
+        float $moveX = rand(($closestNegX + $edgePag), ($closestPosX - $edgePag));
+        float $moveZ = rand(($closestNegZ + $edgePag), ($closestPosZ - $edgePag));
         move -ws -a $moveX $roofHeight[1] $moveZ $tempString[0]; 
         rotate -ws -a 0 $rotValue 0 $tempString[0];
     } else { print ("\n" + $roofAC + "\n"); }
@@ -455,8 +551,8 @@ proc roofSetDressing(string $antenna, string $roofAC, string $roofExit, int $rai
     if ($antenna != "No Antennas!") {
         string $tempString[] = `instance $antenna`;
         float $rotValue = `rand90Rotation`;
-        float $moveX = rand(($closestNegX + $edgePad), ($closestPosX - $edgePad));
-        float $moveZ = rand(($closestNegZ + $edgePad), ($closestPosZ - $edgePad));
+        float $moveX = rand(($closestNegX + $edgePag), ($closestPosX - $edgePag));
+        float $moveZ = rand(($closestNegZ + $edgePag), ($closestPosZ - $edgePag));
         move -ws -a $moveX $roofHeight[1] $moveZ $tempString[0]; 
         rotate -ws -a 0 $rotValue 0 $tempString[0];
     } else { print ("\n" + $antenna + "\n"); }
@@ -508,7 +604,6 @@ proc roofSetDressing(string $antenna, string $roofAC, string $roofExit, int $rai
         ReversePolygonNormals;
     } else { print ("\n" + "No Roof Railing!" + "\n"); }
 }
-
 
 // ************************************************************************************************ //
 
@@ -600,7 +695,6 @@ proc fireEscapeLadder(string $lvl, int $lvlNum, string $window, float $lvlHeight
     select -r "*fireEscape*"; doGroup 0 1 1; rename "grp_fireEscape";select -cl;
 }
 
-
 // ************************************************************************************************ //
 
 /* UI */
@@ -609,6 +703,7 @@ proc buildingWizard() {
     
     // UI variables
     global string $winName = "buildingWin";
+    global string $scrollLayout = "scrollLayoutWin";
     global string $columnLayout = "columnLayoutMain";
     global string $storiesNumField = "storiesNumberField";
     global string $levelFeaturesCB = "levelFeaturesCheckBox";
@@ -620,20 +715,26 @@ proc buildingWizard() {
     global string $windowWidthField = "windowWidthField";;
     global string $windowHeightField = "windowHeightField";
     global string $windowDepthField = "windowDepthField";
+    global string $windowHorPagField = "windowHorPagField";
     global string $eavesScaleField = "eavesScaleField";
     global string $cornerColScaleField = "cornerColScaleField";
     global string $roofRailingsHeightField = "roofRailingsHeightField";
     global string $roofRailingsDepthField = "roofRailingsDepthField";
     global string $roofEdgeDistanceField = "roofEdgeDistanceField";
+    global string $reinforcementDistributionTypeList = "reinforcementDistributionTypeList";
+    global string $reinforcementUnitsInClusterField = "reinforcementUnitsInClusterField";
+    global string $reinforcementClustersNumberField = "reinforcementClustersNumberField";
+    global string $reinforcementUnitWidthField = "reinforcementUnitWidthField";
+    global string $reinforcementClusterIntervalField = "reinforcementClusterIntervalField";
     
     // Building assets variables
-    global string $perimeterAsset[];
-    global string $windowAsset[];
+    global string $perimeterAsset[] = {"Please, update perimeter curve!"};
+    global string $windowAsset[] = {"Please, update window!"};
     global string $windowBBoxAsset[]; $windowBBoxAsset[0] = "_";
-    global string $cornerColAsset[];
-    global string $columnAsset[];
-    global string $reinforcementAsset[];
-    global string $eavesAsset[];
+    global string $cornerColAsset[] = {"Please, update corner column!"};
+    global string $columnAsset[] = {"Please, update column!"};
+    global string $reinforcementAsset[] = {"Please, update reinforcement!"};
+    global string $eavesAsset[] = {"Please, update eaves!"};
     global string $antennaAsset[]; $antennaAsset[0] = "No Antennas!";
     global string $roofExitAsset[]; $roofExitAsset[0] = "No Roof Exit!";
     global string $roofACAsset[]; $roofACAsset[0] = "No Roof AC!";
@@ -643,19 +744,23 @@ proc buildingWizard() {
     global int $floorsNum = 1;
     global float $floorHeight = 390;
     global float $groundFloorHeight = 780;
-    global float $reinforcementDist = 200;
-    global float $reinforcementScale = 1;
     global float $windowWidth = 300;
     global float $windowHeight = 120;
     global float $windowDepth = 20;
-    global float $windowHorPad = 40;
-    global float $windowVertPad = 60;
+    global float $windowHorPag = 40;
+    global float $windowVertPag = 60;
     global float $eavesScale = 1;
     global float $cornerColScale = 1;
     
     global float $roofRailingHeight = 120;
     global float $roofRailingDepth = 30;
-    global float $roofEdgePad = 300;
+    global float $roofEdgePag = 300;
+    
+    global string $reinforcementDistribution = "even";
+    global int $reinforcementUnitsInCluster = 1;
+    global int $reinforcementClustersNumber = 1;
+    global float $reinforcementUnitWidth = 40;
+    global float $reinforcementClusterInterval = 100;
     
     global int $groundFloorBool = 0;
     global int $cornerColumnsBool = 0;
@@ -668,7 +773,7 @@ proc buildingWizard() {
     $createWalls = "wallsGen($perimeterAsset[0], $floorHeight, $lvlName);";
     
     global string $createWindows = "_";
-    $createWindows = "windowPlacement($perimeterAsset[0], $groundFloorHeight, $floorHeight, $windowHorPad, $windowVertPad, $windowWidth, $windowHeight, $windowDepth, $lvlName);";
+    $createWindows = "windowPlacement($perimeterAsset[0], $groundFloorHeight, $floorHeight, $windowHorPag, $windowVertPag, $windowWidth, $windowHeight, $windowDepth, $lvlName);";
     
     global int $i = 1;
     
@@ -679,94 +784,131 @@ proc buildingWizard() {
     window -title "Building Creation Wizard"
        -iconName "BuildWiz"
        -widthHeight 600 800 $winName;
-    columnLayout -adjustableColumn true -rowSpacing 2;
+    scrollLayout -horizontalScrollBarThickness 16 -verticalScrollBarThickness 16 $scrollLayout;
         // ------------------------------------------------------------------------------------------------------------------------
         // AREA 1: Assets Registration
-        text -label "Assets Registration" -align "center" -h 20 -fn "boldLabelFont" -bgc .2 .2 .2;
-        gridLayout -numberOfColumns 3 -cellWidthHeight 200 20;
-            // PERIMETER registration button
-            button -label "Update Perimeter" -command ("$perimeterAsset = `ls -sl -tr`; print \"Perimeter Updated\"");
-            // WINDOW registration button
-            button -label "Update Window" -command ("$windowAsset = `ls -sl -tr`; if (`objExists (\"BBox_\" + $windowAsset[0])`){$windowBBoxAsset[0] = (\"BBox_\" + $windowAsset[0]);}; print \"Window Updated\";");
-            // COLUMN registration button
-            //button -label "Update Column" -command ("$columnAsset = `ls -sl -tr`; print \"Column Updated\"");
-            // CORNER COLUMN registration button
-            button -label "Update Corner Col" -command ("$cornerColAsset = `ls -sl -tr`; print \"Corner Col Updated\"");
-            // REINFORCEMENT registration button
-            button -label "Update Reinforcement" -command ("$reinforcementAsset = `ls -sl -tr`; print \"Reinforcement Updated\"");
-            // EAVES registration button
-            button -label "Update Eaves" -command ("$eavesAsset = `ls -sl -tr`; print \"Eaves Updated\"");
-            // ROOF EXIT registration button
-            button -label "Update Roof Exit" -command ("$roofExitAsset = `ls -sl -tr`; print \"Roof Exit Updated\"");
-            // ROOF ANTENNA registration button
-            button -label "Update Antenna" -command ("$antennaAsset = `ls -sl -tr`; print \"Antenna Updated\"");
-            // ROOF AC registration button
-            button -label "Update Roof AC" -command ("$roofACAsset = `ls -sl -tr`; print \"Roof AC Updated\"");
+        frameLayout -label "Assets Registration" -w 590 -fn "boldLabelFont" -bgc .2 .2 .2 -cll true -p $scrollLayout;
+            columnLayout -adjustableColumn true -rowSpacing 2;
+            //text -label "Assets Registration" -align "center" -h 20 -fn "boldLabelFont" -bgc .2 .2 .2;
+                gridLayout -numberOfColumns 3 -cellWidthHeight 200 20;
+                    // PERIMETER registration button
+                    button -label "Update Perimeter" -command ("$perimeterAsset = `ls -sl -tr`; print \"Perimeter Updated\"");
+                    // WINDOW registration button
+                    button -label "Update Window" -command ("$windowAsset = `ls -sl -tr`; if (`objExists (\"BBox_\" + $windowAsset[0])`){$windowBBoxAsset[0] = (\"BBox_\" + $windowAsset[0]);}; print \"Window Updated\";");
+                    // COLUMN registration button
+                    //button -label "Update Column" -command ("$columnAsset = `ls -sl -tr`; print \"Column Updated\"");
+                    // CORNER COLUMN registration button
+                    button -label "Update Corner Col" -command ("$cornerColAsset = `ls -sl -tr`; print \"Corner Col Updated\"");
+                    // REINFORCEMENT registration button
+                    button -label "Update Reinforcement" -command ("$reinforcementAsset = `ls -sl -tr`; print \"Reinforcement Updated\"");
+                    // EAVES registration button
+                    button -label "Update Eaves" -command ("$eavesAsset = `ls -sl -tr`; print \"Eaves Updated\"");
+                    // ROOF EXIT registration button
+                    button -label "Update Roof Exit" -command ("$roofExitAsset = `ls -sl -tr`; print \"Roof Exit Updated\"");
+                    // ROOF ANTENNA registration button
+                    button -label "Update Antenna" -command ("$antennaAsset = `ls -sl -tr`; print \"Antenna Updated\"");
+                    // ROOF AC registration button
+                    button -label "Update Roof AC" -command ("$roofACAsset = `ls -sl -tr`; print \"Roof AC Updated\"");
+                setParent..;
+            setParent..;
         setParent..;
         separator -height 10 -style "in";
         
         // ------------------------------------------------------------------------------------------------------------------------
         // AREA 2: Structural Choices
-        text -label "Structural Choices" -align "center" -h 20 -fn "boldLabelFont" -bgc .2 .2 .2;
-        // Features checkboxes
-        checkBoxGrp -numberOfCheckBoxes 4 -label "Features" -labelArray4 "Roof Railings" "Corner Columns" "Reinforcement" "Eaves" $levelFeaturesCB;
+        frameLayout -label "Features" -w 590 -fn "boldLabelFont" -bgc .2 .2 .2 -cll true;
+            columnLayout -adjustableColumn true -rowSpacing 2;
+                // Features checkboxes
+                checkBoxGrp -numberOfCheckBoxes 4 -label "Features" -labelArray4 "Roof Railings" "Corner Columns" "Reinforcement" "Eaves" $levelFeaturesCB;
+            setParent..;
+        setParent..;
         separator -height 10 -style "in";
         
         // ------------------------------------------------------------------------------------------------------------------------
         // AREA 3: Parameters
-        text -label "Parameters" -align "center" -h 20 -fn "boldLabelFont" -bgc .2 .2 .2;
-        // Level name field
-        textFieldGrp -label "Level Name" -tx "levelA" $levelNameField;
-        // Ground floor height
-        floatSliderGrp -label "Ground Floor Height" -field true -minValue 210 -maxValue 1200 -v 780 -ss 10 $groundFloorHeightField;
-        // Floor height
-        floatSliderGrp -label "Floor Height" -field true -minValue 100 -maxValue 1200 -v 390 -ss 10 $floorHeightField;
-        // Number of floor in the building
-        intSliderGrp -label "Floors Number" -min 1 -max 100 -value 1 -step 1 -field true $storiesNumField;
-        // Reinforcement Distance
-        floatSliderGrp -label "Reinforcement Distance" -field true -minValue 0 -maxValue 5000 -v 200 -ss 10 $reinforcementDistField;
-        // Window Width
-        floatSliderGrp -label "Window Width" -field true -minValue 0 -maxValue 800 -v 300 -ss 10 $windowWidthField;
-        // Window Height
-        floatSliderGrp -label "Window Height" -field true -minValue 0 -maxValue 1000 -v 120 -ss 10 $windowHeightField;
-        // Window Depth
-        floatSliderGrp -label "Window Depth" -field true -minValue -200 -maxValue 200 -v 20 -ss 10 $windowDepthField;
-        // Eaves scale
-        floatSliderGrp -label "Eaves Scale" -field true -minValue 0 -maxValue 10 -v 1 -ss .1 $eavesScaleField;
-        // Corner Columns Scale
-        floatSliderGrp -label "Corner Columns Scale" -field true -minValue 0 -maxValue 10 -v 1 -ss .1 $cornerColScaleField;
-        // Reinforcement Scale
-        floatSliderGrp -label "Reinforcement Scale" -field true -minValue 0 -maxValue 10 -v 1 -ss .1 $reinforcementScaleField;
-        // Roof Railing Height
-        floatSliderGrp -label "Roof Railing Height" -field true -minValue 0 -maxValue 200 -v 120 -ss .1 $roofRailingsHeightField;
-        // Roof Railing Depth
-        floatSliderGrp -label "Roof Railing Depth" -field true -minValue 0 -maxValue 200 -v 30 -ss .1 $roofRailingsDepthField;
-        // Roof Edge Distance
-        floatSliderGrp -label "Roof Edge Distance" -field true -minValue 0 -maxValue 5000 -v 300 -ss .1 $roofEdgeDistanceField;
-        // Update parameters button
-        button -label "Update Parameters" -command ("$lvlName = `textFieldGrp -q -tx $levelNameField`; $floorsNum = `intSliderGrp -q -v $storiesNumField`; $floorHeight = `floatSliderGrp -q -v $floorHeightField`; $groundFloorHeight = `floatSliderGrp -q -v $groundFloorHeightField`; $reinforcementDist = `floatSliderGrp -q -v $reinforcementDistField`; $reinforcementScale = `floatSliderGrp -q -v $reinforcementScaleField`; $windowWidth = `floatSliderGrp -q -v $windowWidthField`; $windowHeight = `floatSliderGrp -q -v $windowHeightField`; $windowDepth = `floatSliderGrp -q -v $windowDepthField`; $eavesScale = `floatSliderGrp -q -v $eavesScaleField`; $cornerColScale = `floatSliderGrp -q -v $cornerColScaleField`;");
+        frameLayout -label "Parameters" -w 590 -fn "boldLabelFont" -bgc .2 .2 .2 -cll true;
+            rowLayout -numberOfColumns 2 -columnWidth2 280 320 -adjustableColumn 2 -rowAttach 1 "top" 0 -rowAttach 2 "top" 0;
+                columnLayout -adjustableColumn true -rowSpacing 2;
+                    text -l "Level Options" -bgc .2 .2 .2;
+                    // Level name field
+                    textFieldGrp -label "Level Name" -tx "levelA" $levelNameField;
+                    // Ground floor height
+                    // floatSliderGrp -label "Ground Floor Height" -field true -minValue 210 -maxValue 1200 -v 780 -ss 10 $groundFloorHeightField;
+                    // Floor height
+                    floatSliderGrp -label "Floor Height" -field true -minValue 100 -maxValue 1200 -v 390 -ss 10 $floorHeightField;
+                    // Number of floor in the building
+                    intSliderGrp -label "Floors Number" -min 1 -max 100 -value 1 -step 1 -field true $storiesNumField;
+                    // Eaves scale
+                    floatSliderGrp -label "Eaves Scale" -field true -minValue 0 -maxValue 10 -v 1 -ss .1 $eavesScaleField;
+                    // Corner Columns Scale
+                    floatSliderGrp -label "Corner Columns Scale" -field true -minValue 0 -maxValue 10 -v 1 -ss .1 $cornerColScaleField;
+                    // Roof Railing Height
+                    floatSliderGrp -label "Roof Railing Height" -field true -minValue 0 -maxValue 200 -v 120 -ss .1 $roofRailingsHeightField;
+                    // Roof Railing Depth
+                    floatSliderGrp -label "Roof Railing Depth" -field true -minValue 0 -maxValue 200 -v 30 -ss .1 $roofRailingsDepthField;
+                    // Roof Edge Distance
+                    floatSliderGrp -label "Roof Edge Distance" -field true -minValue 0 -maxValue 5000 -v 300 -ss .1 $roofEdgeDistanceField;
+                setParent..;
+                columnLayout -adjustableColumn true -rowSpacing 2;
+                    text -l "Features Options" -bgc .2 .2 .2;
+                    // Window Width
+                    floatSliderGrp -label "Window Width" -field true -minValue 0 -maxValue 800 -v 300 -ss 10 $windowWidthField;
+                    // Window Height
+                    floatSliderGrp -label "Window Height" -field true -minValue 0 -maxValue 1000 -v 120 -ss 10 $windowHeightField;
+                    // Window Depth
+                    floatSliderGrp -label "Window Depth" -field true -minValue -200 -maxValue 200 -v 20 -ss 10 $windowDepthField;
+                    // Window Horisontal Paggination
+                    floatSliderGrp -label "Window Hor Pag" -field true -minValue 0 -maxValue 200 -v 40 -ss 10 $windowHorPagField;
+                    // Reinforcement Distribution
+                    optionMenu -label "Reinforcement Distribution" -changeCommand "print #1; $reinforcementDistribution = (\"#1\");" $reinforcementDistributionTypeList;
+                        menuItem -label "even";
+                        menuItem -label "betweenWindows";
+                        menuItem -label "middle";
+                    // Reinforcement Units in Cluster
+                    intSliderGrp -label "Reinforcement Units in Cluster" -field true -minValue 1 -maxValue 10 -v 1 -ss 1 $reinforcementUnitsInClusterField;
+                    // Reinforcement Clusters Number
+                    intSliderGrp -label "Reinforcement Clusters Number" -field true -minValue 1 -maxValue 10 -v 1 -ss 1 $reinforcementClustersNumberField;
+                    // Reinforcement Unit Width
+                    floatSliderGrp -label "Reinforcement Unit Width" -field true -minValue 0 -maxValue 800 -v 40 -ss .1 $reinforcementUnitWidthField;
+                    // Reinforcement Cluster Interval
+                    floatSliderGrp -label "Reinforcement Cluster Interval" -field true -minValue 0 -maxValue 800 -v 100 -ss .1 $reinforcementClusterIntervalField;
+                setParent..;
+            setParent..;
+        setParent..;
          
         separator -height 10 -style "in";
         
         // ------------------------------------------------------------------------------------------------------------------------
         // AREA 4: Generating
         // Generate a building
-        text -label "Generating" -align "center" -h 20 -fn "boldLabelFont" -bgc .2 .2 .2;
-        
-        button -label "Progress Check!" -command ("print (\"floors num: \" + $floorsNum + \"\\n\"); print (\"floor height: \" + $floorHeight + \"\\n\"); print (\"Ground Floor Height: \" + $groundFloorHeight + \"\\n\"); print (\"Reinforcement Distance: \" + $reinforcementDist + \"\\n\"); print (\"Window Width: \" + $windowWidth + \"\\n\"); print (\"Window Height: \" + $windowHeight + \"\\n\"); print (\"Window Depth: \" + $windowDepth + \"\\n\"); print (\"Eaves Scale: \" + $eavesScale + \"\\n\"); print (\"Corner Columns Scale: \" + $cornerColScale + \"\\n\"); print (\"Reinforcement Scale: \" + $reinforcementScale + \"\\n\");");
-        button -label "Generate Walls" -command ("wallsGen($perimeterAsset[0], $floorHeight, $lvlName);");
-        button -label "Generate Windows" -command ($createWindows + " select -r \"loc_window*\"; $winLocators = `ls -sl -tr`; select -cl; instAtLocators($winLocators, $windowAsset[0], $lvlName); if ($windowBBoxAsset[0] != \"_\"){bboxPlacement($windowAsset[0], $windowBBoxAsset[0], $lvlName);} delete \"loc_window*\";");
-        button -label "Press In Windows" -command ("windowsCutOut(($lvlName + \"_wall_\"), ($lvlName + \"_\" + $windowAsset[0] + \"_\"), $windowDepth, $windowBBoxAsset[0], $lvlName);");
-        button -label "Generate Corner Columns" -command ("if ((`checkBoxGrp -q -v2 $levelFeaturesCB`) > 0){cornerColumnsInst($perimeterAsset[0], $cornerColAsset[0], $lvlName);} else {print \"No Columns...\";}");
-        button -label "Generate Reinforcements" -command ("if ((`checkBoxGrp -q -v3 $levelFeaturesCB`) > 0){reinforcementPlacement($perimeterAsset[0], $reinforcementAsset[0], $reinforcementDist, $lvlName);} else {print \"No Reinforcements...\";}");
-        button -label "Generate Eaves" -command ("if ((`checkBoxGrp -q -v4 $levelFeaturesCB`) > 0){extrudeEaves($perimeterAsset[0], $eavesAsset[0], $lvlName);} else {print \"No Eaves...\";}");
-        button -label "Group Level" -command ("group -em -n (\"grp_\" + $lvlName); parent ($lvlName + \"*\") (\"grp_\" + $lvlName); select -cl;");
-        button -label "Build Height" -command ("instanceLevel($lvlName, $floorHeight, $floorsNum); group -em -n \"grp_building\"; parent (\"grp_\" + $lvlName + \"*\") \"grp_building\";");
-        button -label "Generate Roof" -command ("roofGen($perimeterAsset[0], $floorHeight, $floorsNum, $lvlName); parent ($lvlName + \"_roof_0\") \"grp_building\"; select -cl;");
-        button -label "Populate Roof" -command ("$roofRailingsBool = `checkBoxGrp -q -v1 $levelFeaturesCB`; $roofRailingHeight = `floatSliderGrp -q -v $roofRailingsHeightField`; $roofRailingDepth = `floatSliderGrp -q -v $roofRailingsDepthField`; $roofEdgePad = `floatSliderGrp -q -v $roofEdgeDistanceField`; $lvlName = `textFieldGrp -q -text $levelNameField`; roofSetDressing($antennaAsset[0], $roofACAsset[0], $roofExitAsset[0], $roofRailingsBool, $roofRailingHeight, $roofRailingDepth, $lvlName, $roofEdgePad);");
-        button -label "Fire Escape" -command ("fireEscapeLadder($lvlName, $floorsNum, $windowAsset[0], $floorHeight, 2, 25, 120, 25);");
-
-        button -label "Close" -command ("deleteUI -window " + $winName);
+        frameLayout -label "Generation" -w 590 -fn "boldLabelFont" -bgc .2 .2 .2 -cll true;
+            columnLayout -adjustableColumn true -rowSpacing 2;
+            
+            button -label "Progress Check!" -command ("print $reinforcementDistribution;");
+            button -label "Generate Walls" -command ("if ($perimeterAsset[0] == \"Please, update perimeter curve!\"){print \"Please, update perimeter curve!\";} else {$lvlName = `textFieldGrp -q -tx $levelNameField`; $floorHeight = `floatSliderGrp -q -v $floorHeightField`; wallsGen($perimeterAsset[0], $floorHeight, $lvlName);}");
+            
+            button -label "Generate Windows" -command ("if ($perimeterAsset[0] == \"Please, update window!\"){print \"Please, update window!\";} else {$lvlName = `textFieldGrp -q -tx $levelNameField`; $floorHeight = `floatSliderGrp -q -v $floorHeightField`; $windowWidth = `floatSliderGrp -q -v $windowWidthField`; $windowHeight = `floatSliderGrp -q -v $windowHeightField`; $windowDepth = `floatSliderGrp -q -v $windowDepthField`; $windowHorPag = `floatSliderGrp -q -v $windowHorPagField`; " + $createWindows + " select -r \"loc_window*\"; $winLocators = `ls -sl -tr`; select -cl; instAtLocators($winLocators, $windowAsset[0], $lvlName); if ($windowBBoxAsset[0] != \"_\"){bboxPlacement($windowAsset[0], $windowBBoxAsset[0], $lvlName);} delete \"loc_window*\";}");
+                                                       
+            button -label "Press In Windows" -command ("$lvlName = `textFieldGrp -q -tx $levelNameField`; $windowDepth = `floatSliderGrp -q -v $windowDepthField`; windowsCutOut(($lvlName + \"_wall_\"), ($lvlName + \"_\" + $windowAsset[0] + \"_\"), $windowDepth, $windowBBoxAsset[0], $lvlName);");
+            
+            button -label "Generate Corner Columns" -command ("if ((`checkBoxGrp -q -v2 $levelFeaturesCB`) > 0){$lvlName = `textFieldGrp -q -tx $levelNameField`; cornerColumnsInst($perimeterAsset[0], $cornerColAsset[0], $lvlName);} else {print \"No Columns...\";}");
+            
+            button -label "Generate Reinforcements" -command ("if ((`checkBoxGrp -q -v3 $levelFeaturesCB`) > 0){$reinforcementDistribution = `optionMenu -q -v $reinforcementDistributionTypeList`; $lvlName = `textFieldGrp -q -tx $levelNameField`; $reinforcementUnitsInCluster = `intSliderGrp -q -v $reinforcementUnitsInClusterField`; $reinforcementClustersNumber = `intSliderGrp -q -v $reinforcementClustersNumberField`; $reinforcementUnitWidth = `floatSliderGrp -q -v $reinforcementUnitWidthField`; $reinforcementClusterInterval = `floatSliderGrp -q -v $reinforcementClusterIntervalField`; reinforcementsPlacement($reinforcementDistribution, $lvlName, $perimeterAsset[0], $reinforcementAsset[0], $windowAsset[0], $reinforcementUnitsInCluster, $reinforcementClustersNumber, $reinforcementUnitWidth, $reinforcementClusterInterval); select -r \"loc_reinforcement*\"; $reinforcementLocators = `ls -sl -tr`; select -cl; instAtLocators($reinforcementLocators, $reinforcementAsset[0], $lvlName); delete \"loc_reinforcement*\";} else {print \"No Reinforcements...\";}");
+            
+            button -label "Generate Eaves" -command ("if ((`checkBoxGrp -q -v4 $levelFeaturesCB`) > 0){$lvlName = `textFieldGrp -q -tx $levelNameField`; extrudeEaves($perimeterAsset[0], $eavesAsset[0], $lvlName);} else {print \"No Eaves...\";}");
+                                                                                                      
+            button -label "Group Level" -command ("$lvlName = `textFieldGrp -q -tx $levelNameField`; group -em -n (\"grp_\" + $lvlName); parent ($lvlName + \"*\") (\"grp_\" + $lvlName); select -cl;");
+            
+            button -label "Build Height" -command ("$lvlName = `textFieldGrp -q -tx $levelNameField`; $floorHeight = `floatSliderGrp -q -v $floorHeightField`; $floorsNum = `intSliderGrp -q -v $storiesNumField`; instanceLevel($lvlName, $floorHeight, $floorsNum); if (`objExists \"grp_building\"`){parent (\"grp_\" + $lvlName + \"*\") \"grp_building\";} else {group -em -n \"grp_building\"; parent (\"grp_\" + $lvlName + \"*\") \"grp_building\";}");
+            
+            button -label "Generate Roof" -command ("$floorHeight = `floatSliderGrp -q -v $floorHeightField`; $floorsNum = `intSliderGrp -q -v $storiesNumField`; $lvlName = `textFieldGrp -q -tx $levelNameField`; roofGen($perimeterAsset[0], $floorHeight, $floorsNum, $lvlName); parent ($lvlName + \"_roof_0\") \"grp_building\"; select -cl;");
+            
+            button -label "Populate Roof" -command ("$roofRailingsBool = `checkBoxGrp -q -v1 $levelFeaturesCB`; $roofRailingHeight = `floatSliderGrp -q -v $roofRailingsHeightField`; $roofRailingDepth = `floatSliderGrp -q -v $roofRailingsDepthField`; $roofEdgePag = `floatSliderGrp -q -v $roofEdgeDistanceField`; $lvlName = `textFieldGrp -q -text $levelNameField`; roofSetDressing($antennaAsset[0], $roofACAsset[0], $roofExitAsset[0], $roofRailingsBool, $roofRailingHeight, $roofRailingDepth, $lvlName, $roofEdgePag);");
+            
+            button -label "Fire Escape" -command ("$lvlName = `textFieldGrp -q -tx $levelNameField`; $floorsNum = `intSliderGrp -q -v $storiesNumField`; $floorHeight = `floatSliderGrp -q -v $floorHeightField`; fireEscapeLadder($lvlName, $floorsNum, $windowAsset[0], $floorHeight, 2, 25, 120, 25);");
+    
+            button -label "Close" -command ("deleteUI -window " + $winName);
+        setParent..;
     setParent $winName;
     showWindow $winName;   
 }
